@@ -113,6 +113,7 @@ ui <- fluidPage(
 )
 
 # Define the server logic for the Shiny app
+# Define the server logic for the Shiny app
 server <- function(input, output) {
   
   # Memoised function for caching stock data calculations
@@ -128,12 +129,13 @@ server <- function(input, output) {
   
   # Reactive stock data with caching
   stock_data <- reactive({
+    req(input$date_range, input$stock_select)  # Ensure inputs are available
     memoized_stock_data(input$date_range, input$stock_select)
   })
   
   # Loading status indicator
   output$data_loading_status <- renderUI({
-    if(is.null(stock_data())) {
+    if (is.null(stock_data())) {
       div(
         class = "text-info",
         icon("spinner", class = "fa-spin"),
@@ -144,50 +146,57 @@ server <- function(input, output) {
   
   # Dynamic Performance Cards
   output$daily_return <- renderUI({
-    returns <- diff(log(stock_data()$Price))
-    daily_return <- mean(returns, na.rm = TRUE) * 100
-    
-    div(class = "value",
-        sprintf("%.2f%%", daily_return),
-        if(daily_return > 0) {
-          icon("arrow-up", class = "text-success")
-        } else {
-          icon("arrow-down", class = "text-danger")
-        }
-    )
+    data <- stock_data()
+    if (nrow(data) > 1) {
+      returns <- diff(log(data$Price))
+      daily_return <- mean(returns, na.rm = TRUE) * 100
+      div(class = "value",
+          sprintf("%.2f%%", daily_return),
+          if(daily_return > 0) icon("arrow-up", class = "text-success") else icon("arrow-down", class = "text-danger")
+      )
+    } else {
+      div(class = "value", "No data available")
+    }
   })
   
   output$total_value <- renderUI({
-    total_value <- sum(stock_data()$Price)
+    total_value <- sum(stock_data()$Price, na.rm = TRUE)
     div(class = "value",
         paste("$", formatC(total_value, format = "f", big.mark = ",", digits = 0))
     )
   })
   
   output$volatility <- renderUI({
-    if (nrow(stock_data()) > 1) {
-      volatility <- sd(diff(log(stock_data()$Price))) * sqrt(252) * 100
-      div(class = "value",
-          paste(round(volatility, 2), "%")
-      )
+    data <- stock_data()
+    if (nrow(data) > 1) {
+      volatility <- sd(diff(log(data$Price)), na.rm = TRUE) * sqrt(252) * 100
+      div(class = "value", paste(round(volatility, 2), "%"))
     } else {
       div(class = "value", "Insufficient data")
     }
   })
   
-  # Indexed data for performance plot
+  # Indexed data for performance plot with error handling
   indexed_stock_data <- reactive({
     data <- stock_data()
-    data <- data %>%
-      group_by(Stock) %>%
-      mutate(IndexedPrice = (Price / first(Price)) * 100) %>%
-      ungroup()
+    if (nrow(data) > 1 && all(!is.na(data$Price))) {
+      data <- data %>%
+        group_by(Stock) %>%
+        mutate(IndexedPrice = (Price / first(Price, default = NA)) * 100) %>%
+        ungroup()
+      data <- drop_na(data, Date, IndexedPrice)  # Remove rows with missing values
+    } else {
+      data <- data.frame(Date = as.Date(character(0)), Stock = character(0), IndexedPrice = numeric(0))
+    }
     data
   })
   
   # Performance plot
   output$performance_plot <- renderPlotly({
-    plot_ly(data = indexed_stock_data(),
+    data <- indexed_stock_data()
+    req(nrow(data) > 0)  # Render only if data is available
+    
+    plot_ly(data = data,
             x = ~Date, y = ~IndexedPrice, color = ~Stock,
             type = 'scatter', mode = 'lines', name = ~Stock) %>%
       layout(
@@ -204,19 +213,21 @@ server <- function(input, output) {
   # Asset allocation pie chart
   output$allocation_chart <- renderPlotly({
     allocation <- aggregate(Price ~ Stock, data = stock_data(), FUN = function(x) tail(x, 1))
-    allocation$Allocation <- allocation$Price / sum(allocation$Price) * 100
-    
-    plot_ly(allocation, labels = ~Stock, values = ~Allocation, 
-            type = 'pie', 
-            textinfo = 'percent',
-            hoverinfo = 'label+percent',
-            marker = list(colors = c("#007bff", "#00f2c3", "#fd5d93", "#ff8d72", "#1d8cf8"))) %>%
-      layout(
-        showlegend = TRUE,
-        plot_bgcolor = "#27293d",
-        paper_bgcolor = "#27293d",
-        font = list(color = "white")
-      )
+    if (nrow(allocation) > 0) {
+      allocation$Allocation <- allocation$Price / sum(allocation$Price, na.rm = TRUE) * 100
+      
+      plot_ly(allocation, labels = ~Stock, values = ~Allocation, 
+              type = 'pie', 
+              textinfo = 'percent',
+              hoverinfo = 'label+percent',
+              marker = list(colors = c("#007bff", "#00f2c3", "#fd5d93", "#ff8d72", "#1d8cf8"))) %>%
+        layout(
+          showlegend = TRUE,
+          plot_bgcolor = "#27293d",
+          paper_bgcolor = "#27293d",
+          font = list(color = "white")
+        )
+    }
   })
   
   # Download data handler
@@ -229,6 +240,7 @@ server <- function(input, output) {
     }
   )
 }
+
 
 # Create Shiny app with the defined UI and server
 shinyApp(ui = ui, server = server)
