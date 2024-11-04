@@ -1,4 +1,4 @@
-# Version 1.08
+# Version 1.09
 # Load necessary libraries
 library(shiny)
 library(bslib)    # for theme customization
@@ -186,9 +186,18 @@ server <- function(input, output) {
   output$performance_plot <- renderPlotly({
     req(nrow(indexed_stock_data()) > 1)  # Only render if data is valid and has rows
     data <- indexed_stock_data()
+    
+    # Define custom colors (matching your theme)
+    custom_colors <- c("#007bff", "#00f2c3", "#fd5d93", "#ff8d72", "#1d8cf8")
+    
     plot_ly(data = data,
-            x = ~Date, y = ~IndexedPrice, color = ~Stock,
-            type = 'scatter', mode = 'lines', text = ~Stock) %>%
+            x = ~Date, 
+            y = ~IndexedPrice, 
+            color = ~Stock,
+            colors = custom_colors,  # Use custom colors
+            type = 'scatter', 
+            mode = 'lines', 
+            text = ~Stock) %>%
       layout(
         dragmode = "zoom",
         hovermode = "x unified",
@@ -205,11 +214,16 @@ server <- function(input, output) {
     allocation <- aggregate(Price ~ Stock, data = stock_data(), FUN = function(x) tail(x, 1))
     allocation$Allocation <- allocation$Price / sum(allocation$Price) * 100
     
-    plot_ly(allocation, labels = ~Stock, values = ~Allocation, 
+    # Use the same custom colors for consistency
+    custom_colors <- c("#007bff", "#00f2c3", "#fd5d93", "#ff8d72", "#1d8cf8")
+    
+    plot_ly(allocation, 
+            labels = ~Stock, 
+            values = ~Allocation, 
             type = 'pie', 
             textinfo = 'percent',
             hoverinfo = 'label+percent',
-            marker = list(colors = c("#007bff", "#00f2c3", "#fd5d93", "#ff8d72", "#1d8cf8"))) %>%
+            marker = list(colors = custom_colors)) %>%
       layout(
         showlegend = TRUE,
         plot_bgcolor = "#27293d",
